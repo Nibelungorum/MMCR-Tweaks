@@ -10,8 +10,8 @@ public final class EcoMachine implements MachineDefinitionProvider {
     @Override
     public void register(RegisterMachineDefinitionsEvent event) {
         event.registerMachine(CPU, machine -> machine.displayNameKey("machine.mmcr_tweaks.eco_cpu")
-                .tickBehavior(hooks -> hooks.serverTick(EcoSubsystem::tick)));
+                .tickBehavior(hooks -> hooks.serverTick(EcoSubsystem::new)));
         event.registerMachine(ResourceLocation.parse("mmcr:eco"), machine -> machine.displayNameKey("machine.mmcr_tweaks.eco")
-                .tickBehavior(hooks -> hooks.serverTick(EcoSubsystem::tick)));
+                .tickBehavior(hooks -> hooks.serverTick(EcoSubsystem::new)));
     }
 }

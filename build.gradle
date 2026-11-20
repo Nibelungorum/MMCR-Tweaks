@@ -27,6 +27,8 @@ sourceSets.main.resources {
 
 repositories {
     mavenCentral { content { includeGroup "org.appliedenergistics" } }
+    maven { url = "https://modmaven.dev/"; content { includeGroup "mezz.jei" } }
+    maven { url = "https://maven.latvian.dev/releases"; content { includeGroup "dev.latvian.mods" } }
     maven { url = "https://api.modrinth.com/maven"; content { includeGroup "maven.modrinth" } }
     maven { url = "https://cursemaven.com"; content { includeGroup "curse.maven" } }
     ivy {
@@ -54,6 +56,14 @@ sourceSets {
     }
 }
 
+configurations {
+    runtimeClasspath.extendsFrom localRuntime
+    clientMods {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+}
+
 // Default run configurations.
 // These can be tweaked, removed, or duplicated as needed.
 runs {
@@ -77,6 +87,7 @@ runs {
     }
 
     client {
+        runtimeClasspath.from(project.configurations.clientMods)
         // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
     }
@@ -104,13 +115,10 @@ runs {
     }
 }
 
-// Sets up a dependency configuration called 'localRuntime'.
-// This configuration should be used instead of 'runtimeOnly' to declare
-// a dependency that will be present for runtime testing but that is
-// "optional", meaning it will not be pulled by dependents of this mod.
-configurations {
-    runtimeClasspath.extendsFrom localRuntime
-}
+def mmcrDir = file('../mmcr-1.21.1')
+def mmcrVersions = new Properties()
+new File(mmcrDir, 'gradle.properties').withInputStream { mmcrVersions.load(it) }
+def mmcrLib = new File(mmcrDir, "build/libs/mmcr-neoforge-mc${minecraft_version}-0.0.0.jar")
 
 dependencies {
     // Specify the version of Minecraft to use.
@@ -120,18 +128,26 @@ dependencies {
     // And its provides the option to then use net.minecraft as the group, and one of; client, server or joined as the module name, plus the game version as version.
     // For all intends and purposes: You can treat this dependency as if it is a normal library you would use.
     implementation "net.neoforged:neoforge:${neo_version}"
-    implementation(project.hasProperty('mmcrJar') ? files(project.mmcrJar) : 'maven.modrinth:modular-machinery-community-refoxed:6FrkThyx')
+    implementation files(mmcrLib)
+    // MMCR's client-only ECO 21.2.6 lacks the CPU APIs used by this addon.
     implementation(project.hasProperty('ecoJar') ? files(project.ecoJar) : 'eco.release:neoecoae:21.2.19-beta')
-    implementation 'org.appliedenergistics:appliedenergistics2:19.2.17'
-    implementation 'curse.maven:ldlib-626676:9059591'
-    runtimeOnly 'org.appliedenergistics:guideme:21.1.1'
+    implementation "org.appliedenergistics:appliedenergistics2:${mmcrVersions.ae2_version}"
+    implementation "curse.maven:${mmcrVersions.ldlib_id}:${mmcrVersions.ldlib_version}"
+    runtimeOnly "org.appliedenergistics:guideme:${mmcrVersions.guideme_version}"
 
-    // Example optional mod dependency with JEI
-    // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
-    // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
-    // compileOnly "mezz.jei:jei-${mc_version}-neoforge-api:${jei_version}"
-    // We add the full version to localRuntime, not runtimeOnly, so that we do not publish a dependency on it
-    // localRuntime "mezz.jei:jei-${mc_version}-neoforge:${jei_version}"
+    // Development tools, not published dependencies. KubeJS embeds its Java libraries, but not Rhino.
+    localRuntime("dev.latvian.mods:kubejs-neoforge:${mmcrVersions.kubejs_version}") { transitive = false }
+    localRuntime "dev.latvian.mods:rhino:${mmcrVersions.rhino_version}"
+    localRuntime "maven.modrinth:jade:${mmcrVersions.jade_version}"
+
+    // Use JEI's self-contained NeoForge jar rather than also loading its common classes separately.
+    clientMods("mezz.jei:jei-${minecraft_version}-neoforge:${mmcrVersions.jei_version}") { transitive = false }
+    clientMods "curse.maven:${mmcrVersions.ae2xjei_id}:${mmcrVersions.ae2xjei_version}"
+    clientMods "curse.maven:${mmcrVersions.jec_id}:${mmcrVersions.jec_version}"
+    clientMods "curse.maven:${mmcrVersions.sodium_id}:${mmcrVersions.sodium_version}"
+    clientMods "maven.modrinth:${mmcrVersions.mui_id}:${mmcrVersions.mui_version}"
+    clientMods "maven.modrinth:${mmcrVersions.lithium_id}:${mmcrVersions.lithium_version}"
+    clientMods "curse.maven:${mmcrVersions.spark_id}:${mmcrVersions.spark_version}"
 
     // Example mod dependency using a mod jar from ./libs with a flat dir repository
     // This maps to ./libs/coolmod-${mc_version}-${coolmod_version}.jar

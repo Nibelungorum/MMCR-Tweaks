@@ -32,7 +32,10 @@ integration of AE2LT
 Java 21、Gradle 9.6.0，在项目根目录运行：
 
 ```sh
+gradle -p ../mmcr-1.21.1 jar
 gradle build runGameTestServer
 ```
 
-测试使用 MMCR `0.1.8+dev-258dabdf6`、AE2 `19.2.17`、ECO `21.2.19-beta`。可用 `-PmmcrJar=/path/to/mmcr.jar` 或 `-PecoJar=/path/to/neoecoae.jar` 测本地版本。GameTest 实际下单验证单 FX 的 513 次整批、缺电后恢复、双 FX 同 tick 扣费、65 单并发和退料。重载测试保存持有订单的 CPU 和已收料 FX 的 NBT，调用卸载回调并重建实体；不强卸 GameTest 共用的区块，也不模拟整个服务器重启。
+MMCR 固定读取 `../mmcr-1.21.1/build/libs/mmcr-neoforge-mc1.21.1-0.0.0.jar`。需要包含提交 `1eb11da9a` 的本地构建：F9 和 C9 使用该版本的 `serverTick(Supplier)`，每个控制器独立维护结构绑定。旧开发包也可能显示 `0.0.0`，更新源码后请重新运行上面的 `jar` 任务。开发用的 KubeJS、Rhino、Jade，以及客户端的 JEI、Sodium、ModernUI 等，跟随相邻工程 `gradle.properties` 的版本，不是玩家必装依赖。ECO 仍使用 `21.2.19-beta`：相邻工程的 `21.2.6` 缺少 C9 所用的 API。可用 `-PecoJar=/path/to/neoecoae.jar` 测试兼容的本地 ECO 包。
+
+GameTest 实际下单验证单 FX 的 513 次整批、缺电后恢复、双 FX 同 tick 扣费、65 单并发和退料。重载测试保存持有订单的 CPU 和已收料 FX 的 NBT，调用卸载回调并重建实体；不强卸 GameTest 共用的区块，也不模拟整个服务器重启。

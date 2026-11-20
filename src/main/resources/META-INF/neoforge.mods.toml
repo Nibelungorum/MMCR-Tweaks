@@ -82,8 +82,8 @@ config="${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
     modId="mmcr"
     type="required"
-    # MMCR sibling-project development jars use the literal version 0.0.0.
-    versionRange="[0.0.0],[0.1.8,0.2)"
+    # Local MMCR build with controller-scoped hooks (1eb11da9a); published 0.1.8 predates them.
+    versionRange="[0.0.0]"
     ordering="AFTER"
     side="BOTH"
 

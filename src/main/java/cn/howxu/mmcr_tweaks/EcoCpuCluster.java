@@ -5,14 +5,13 @@ import appeng.api.networking.crafting.*;
 import appeng.api.networking.security.IActionSource;
 import appeng.crafting.execution.CraftingSubmitResult;
 import cn.dancingsnow.neoecoae.multiblock.cluster.NEComputationCluster;
-import cn.howxu.mmcr.internal.tile.MachineControllerBlockEntity;
 import java.util.List;
 
 final class EcoCpuCluster extends NEComputationCluster {
-    private final MachineControllerBlockEntity owner;
+    private final EcoSubsystem owner;
     private final EcoCpuPortBlockEntity port;
 
-    EcoCpuCluster(MachineControllerBlockEntity owner, EcoCpuPortBlockEntity port) {
+    EcoCpuCluster(EcoSubsystem owner, EcoCpuPortBlockEntity port) {
         super(port.getBlockPos(), port.getBlockPos());
         this.owner = owner;
         this.port = port;
@@ -42,7 +41,7 @@ final class EcoCpuCluster extends NEComputationCluster {
 
     @Override public void destroy() {
         if (isDestroyed()) return;
-        EcoSubsystem.forget(owner, this);
+        owner.forget(this);
         notifyGridCpuChange();
         super.destroy();
     }

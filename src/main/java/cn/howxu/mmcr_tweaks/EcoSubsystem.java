@@ -8,6 +8,7 @@ import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingPatternBusBlock
 import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingWorkerBlockEntity;
 import cn.dancingsnow.neoecoae.multiblock.cluster.NECraftingCluster;
 import cn.dancingsnow.neoecoae.multiblock.cluster.NECluster;
+import cn.howxu.mmcr.internal.runtime.StructureSnapshot;
 import cn.howxu.mmcr.internal.tile.MachineControllerBlockEntity;
 import cn.howxu.mmcr.publicapi.behavior.TickContext;
 import net.minecraft.core.BlockPos;
@@ -21,15 +22,25 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
-public final class EcoSubsystem {
-    // Server thread only. A cluster unregisters itself even when ECO initiates teardown.
+public final class EcoSubsystem implements Consumer<TickContext> {
+    // Each MMCR controller owns one callback. Only teardown events need the shared index.
     private record Formation(MachineControllerBlockEntity owner, long version, Set<ChunkPos> chunks, NECluster<?> cluster) {}
     private static final Map<MachineControllerBlockEntity, Formation> ACTIVE = new IdentityHashMap<>();
 
-    static void forget(MachineControllerBlockEntity owner, NECluster<?> cluster) {
-        var bound = ACTIVE.get(owner);
-        if (bound != null && bound.cluster == cluster) ACTIVE.remove(owner);
+    private MachineControllerBlockEntity owner;
+    private Formation formation;
+
+    private void remember(StructureSnapshot structure, NECluster<?> cluster) {
+        formation = new Formation(owner, structure.version(), structure.criticalChunks(), cluster);
+        ACTIVE.put(owner, formation);
+    }
+
+    void forget(NECluster<?> cluster) {
+        if (formation == null || formation.cluster != cluster) return;
+        ACTIVE.remove(owner, formation);
+        formation = null;
     }
 
     public static boolean managed(Object part) {
@@ -37,21 +48,26 @@ public final class EcoSubsystem {
                 || part instanceof NEBlockEntity<?, ?> be && be.getCluster() instanceof Binding;
     }
 
-    static void tick(TickContext context) {
+    @Override
+    public void accept(TickContext context) {
         var level = context.level();
-        if (!(level.getBlockEntity(context.controllerPos()) instanceof MachineControllerBlockEntity controller)) return;
-        var structure = controller.structureSnapshot();
+        if (owner == null) {
+            if (!(level.getBlockEntity(context.controllerPos()) instanceof MachineControllerBlockEntity controller)) return;
+            owner = controller;
+            // MMCR can replace a hook on machine reassignment without removing the block entity.
+            unload(owner);
+        }
+        var structure = owner.structureSnapshot();
         if (!structure.formed() || !structure.structureAreaLoaded() || structure.pattern() == null || structure.dirty()) return;
-        var previous = ACTIVE.get(controller);
-        if (previous != null && previous.version == structure.version()) return;
-        if (previous != null) previous.cluster.destroy();
+        if (formation != null && formation.version == structure.version()) return;
+        if (formation != null) formation.cluster.destroy();
         // An incomplete or contested structure can remain formed for a long time.
         if (!context.isDue(10) || MBCalculator.isModificationInProgress()) return;
 
         if (EcoMachine.CPU.equals(context.machineId())) {
             EcoCpuPortBlockEntity port = null;
             for (var offset : structure.pattern().pattern().keySet()) {
-                var pos = controller.getBlockPos().offset(offset);
+                var pos = owner.getBlockPos().offset(offset);
                 if (!level.hasChunkAt(pos)) return;
                 if (level.getBlockEntity(pos) instanceof EcoCpuPortBlockEntity host) {
                     if (port != null) return;
@@ -59,12 +75,12 @@ public final class EcoSubsystem {
                 }
             }
             if (port == null || port.isRemoved() || port.getCluster() != null || port.getGridNode() == null) return;
-            var cluster = new EcoCpuCluster(controller, port);
+            var cluster = new EcoCpuCluster(this, port);
             cluster.addBlockEntity(port);
             cluster.updateFormed(true);
             port.updateCluster(cluster);
             cluster.notifyGridCpuChange();
-            ACTIVE.put(controller, new Formation(controller, structure.version(), structure.criticalChunks(), cluster));
+            remember(structure, cluster);
             return;
         }
 
@@ -72,7 +88,7 @@ public final class EcoSubsystem {
         var parts = new ArrayList<NEBlockEntity<NECraftingCluster, ?>>();
         boolean bus = false, worker = false;
         for (var offset : structure.pattern().pattern().keySet()) {
-            var pos = controller.getBlockPos().offset(offset);
+            var pos = owner.getBlockPos().offset(offset);
             if (!level.hasChunkAt(pos)) return;
             var entity = level.getBlockEntity(pos);
             if (entity instanceof EcoPortBlockEntity host) {
@@ -95,7 +111,7 @@ public final class EcoSubsystem {
             max = BlockPos.max(max, part.getBlockPos());
         }
 
-        var binding = new Binding(controller, min, max);
+        var binding = new Binding(min, max);
         MBCalculator.setModificationInProgress(binding);
         try {
             parts.forEach(binding::addBlockEntity);
@@ -107,7 +123,7 @@ public final class EcoSubsystem {
             }
             port.updateCluster(binding);
             binding.updateStatus(true);
-            ACTIVE.put(controller, new Formation(controller, structure.version(), structure.criticalChunks(), binding));
+            remember(structure, binding);
         } catch (RuntimeException failure) {
             binding.destroy();
             throw failure;
@@ -143,19 +159,17 @@ public final class EcoSubsystem {
         for (var b : List.copyOf(ACTIVE.values())) if (b.owner.getLevel() == level) b.cluster.destroy();
     }
 
-    private static final class Binding extends NECraftingCluster {
-        final MachineControllerBlockEntity owner;
+    private final class Binding extends NECraftingCluster {
         final List<IGridConnection> links = new ArrayList<>();
 
-        Binding(MachineControllerBlockEntity owner, BlockPos min, BlockPos max) {
+        Binding(BlockPos min, BlockPos max) {
             super(min, max);
-            this.owner = owner;
         }
 
         @Override
         public void destroy() {
             if (isDestroyed()) return;
-            forget(owner, this);
+            forget(this);
             super.destroy();
             for (var link : links) if (link.a().getConnections().contains(link)) link.destroy();
             links.clear();

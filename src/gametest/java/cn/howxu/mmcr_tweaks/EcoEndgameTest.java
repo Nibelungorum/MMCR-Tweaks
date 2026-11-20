@@ -51,6 +51,45 @@ public class EcoEndgameTest {
                 .controller('C').where('P', BlockConditions.block(PORT)).where('I', BlockConditions.block(Blocks.IRON_BLOCK))));
     }
 
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void sameTypeControllersReformIndependently(GameTestHelper h) {
+        var a = new BlockPos(1, 1, 1);
+        var b = a.east(2);
+        for (var pos : List.of(a, b)) {
+            h.setBlock(pos, ModBlocks.controllerFor(CPU).get());
+            h.setBlock(pos.above(), BuiltInRegistries.BLOCK.get(PORT));
+            h.setBlock(pos.above(2), Blocks.IRON_BLOCK);
+            ((MachineControllerBlockEntity) h.getBlockEntity(pos)).requestImmediateStructureCheck();
+        }
+        h.setBlock(a.east().above(), AEBlocks.CREATIVE_ENERGY_CELL.block());
+        EcoCpuPortBlockEntity first = h.getBlockEntity(a.above()), second = h.getBlockEntity(b.above());
+        var original = new java.util.concurrent.atomic.AtomicReference<ICraftingCPU>();
+        var seq = h.startSequence().thenWaitUntil(() -> h.assertTrue(first.getCluster() != null && second.getCluster() != null
+                && first.getMainNode().getGrid() == second.getMainNode().getGrid()
+                && second.getMainNode().getGrid().getCraftingService().getCpus().size() == 2, "both C9 controllers advertise"));
+        seq.thenExecute(() -> {
+            original.set(second.getCluster().getFakeCPU());
+            h.setBlock(a.above(2), Blocks.AIR);
+        }).thenWaitUntil(() -> h.assertTrue(first.getCluster() == null && second.getCluster() != null
+                && second.getMainNode().getGrid().getCraftingService().getCpus().equals(java.util.Set.of(original.get())),
+                "breaking the first structure leaves the second CPU online"))
+          .thenExecute(() -> h.setBlock(a.above(2), Blocks.IRON_BLOCK))
+          .thenWaitUntil(() -> h.assertTrue(first.getCluster() != null && second.getCluster() != null
+                && second.getCluster().getFakeCPU() == original.get()
+                && second.getMainNode().getGrid().getCraftingService().getCpus().size() == 2, "reformation rebinds only the first controller"))
+          .thenExecute(() -> {
+              MachineControllerBlockEntity controller = h.getBlockEntity(a);
+              var machine = controller.structureSnapshot().configuredMachine();
+              controller.setMachine(null);
+              h.assertTrue(first.getCluster() == null && second.getCluster().getFakeCPU() == original.get(),
+                      "discarding a controller's hook withdraws only its own cluster");
+              controller.setMachine(machine);
+              controller.requestImmediateStructureCheck();
+          }).thenWaitUntil(() -> h.assertTrue(first.getCluster() != null && second.getCluster().getFakeCPU() == original.get()
+                  && second.getMainNode().getGrid().getCraftingService().getCpus().size() == 2, "fresh callback rebinds the existing controller"))
+          .thenSucceed();
+    }
+
     @GameTest(template = "empty", timeoutTicks = 800)
     public static void virtualBatchAfterReload(GameTestHelper h) { exercise(h, 513, 1); }
 

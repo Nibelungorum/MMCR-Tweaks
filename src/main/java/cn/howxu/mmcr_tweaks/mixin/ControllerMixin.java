@@ -13,6 +13,13 @@ abstract class ControllerMixin {
         EcoSubsystem.unload((MachineControllerBlockEntity) (Object) this);
     }
 
+    // These paths discard the controller's hook without a chunk unload or physical teardown.
+    @Inject(method = {"setMachine", "setLevel"}, at = @At(value = "INVOKE",
+            target = "Lcn/howxu/mmcr/internal/tile/MachineControllerRuntime;clearHookInstances()V"))
+    private void mmcr_tweaks$releaseOldHook(CallbackInfo ci) {
+        EcoSubsystem.unload((MachineControllerBlockEntity) (Object) this);
+    }
+
     @Inject(method = "resetMachine(ZZZ)V", at = @At("HEAD"))
     private void mmcr_tweaks$unform(boolean clearFailure, boolean updateState, boolean invalidateCheck, CallbackInfo ci) {
         EcoSubsystem.unform((MachineControllerBlockEntity) (Object) this);

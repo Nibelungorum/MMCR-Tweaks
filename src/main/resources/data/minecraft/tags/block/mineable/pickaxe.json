@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "mmcr_tweaks:eco_me_port"
+    "mmcr_tweaks:eco_me_port",
+    "mmcr_tweaks:eco_cpu_port"
   ]
 }

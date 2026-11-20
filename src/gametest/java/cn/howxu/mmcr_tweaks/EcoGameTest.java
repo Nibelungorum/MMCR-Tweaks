@@ -44,8 +44,9 @@ public class EcoGameTest {
 
     @SubscribeEvent
     public static void structure(RegisterMachineStructuresEvent event) {
-        event.registerStructure(MACHINE, s -> s.singlePattern(p -> p.pattern("C", "P", "I", "F", "I", "X")
+        event.registerStructure(MACHINE, s -> s.singlePattern(p -> p.pattern("C", "P", "I", "F", "S", "X")
                 .controller('C').where('P', BlockConditions.block(PORT)).where('I', BlockConditions.block(Blocks.IRON_BLOCK))
+                .where('S', BlockConditions.any(BlockConditions.block(Blocks.IRON_BLOCK), BlockConditions.block(FX)))
                 .where('F', BlockConditions.block(FD)).where('X', BlockConditions.block(FX))));
     }
 
@@ -71,6 +72,9 @@ public class EcoGameTest {
         h.setBlock(c.above(3).south(), BuiltInRegistries.BLOCK.get(FX)); // Adjacent, but outside the MMCR pattern.
         h.setBlock(p.east(), AEBlocks.ENERGY_CELL.block());
         h.setBlock(power, AEBlocks.CREATIVE_ENERGY_CELL.block());
+        var meter = new EcoEndgameTest.Meter();
+        if (reload) ((appeng.blockentity.networking.CreativeEnergyCellBlockEntity) h.getBlockEntity(power))
+                .getMainNode().addService(appeng.api.networking.energy.IAEPowerStorage.class, meter);
         h.setBlock(power.east(), AEBlocks.ME_CHEST.block());
         h.setBlock(power.south(), AEBlocks.CRAFTING_STORAGE_1K.block());
         MachineControllerBlockEntity controller = h.getBlockEntity(c);
@@ -95,6 +99,7 @@ public class EcoGameTest {
                 && cpu.getCluster() != null && cpu.getCluster().isActive() && chest.getMainNode().isActive()
                 && chest.getGridNode().getGrid().getCraftingService().isCraftable(output), "FD must advertise across the port"));
         sequence.thenExecute(() -> {
+            h.assertTrue(fd.getCluster().getController().getCapabilitySnapshot().virtualMode(), "formed MMCR host enables F9 virtual crafting");
             ECOCraftingWorkerBlockEntity outside = h.getBlockEntity(c.above(3).south());
             h.assertTrue(outside.getCluster() == null, "do not claim an adjacent foreign worker");
             h.setBlock(p.east(), Blocks.AIR);
@@ -117,7 +122,10 @@ public class EcoGameTest {
                 } catch (java.util.concurrent.ExecutionException | InterruptedException e) { throw new AssertionError(e); }
             });
         if (reload) sequence.thenWaitUntil(() -> h.assertTrue(!fx.getThreadSnapshots().isEmpty(), "the native FX owns the paid task"))
-                .thenExecute(() -> reloadOwners(h, List.of(controller, h.getBlockEntity(p), fd, fx)));
+                .thenExecute(() -> {
+                    reloadOwners(h, List.of(controller, h.getBlockEntity(p), fd, fx));
+                    meter.fullPower = true;
+                });
         sequence.thenWaitUntil(() -> h.assertTrue(chest.getInventory().extract(output, Long.MAX_VALUE, Actionable.SIMULATE, source)
                     == product.getCount(), "exactly one craft returned"))
             .thenExecute(() -> h.setBlock(c.above(2), Blocks.AIR))
@@ -129,7 +137,7 @@ public class EcoGameTest {
     }
 
     // Exercise unload callbacks and NBT restoration without evicting a shared GameTest chunk.
-    private static void reloadOwners(GameTestHelper h, List<BlockEntity> owners) {
+    static void reloadOwners(GameTestHelper h, List<BlockEntity> owners) {
         var level = h.getLevel();
         var tags = owners.stream().map(be -> be.saveWithFullMetadata(level.registryAccess())).toList();
         owners.forEach(BlockEntity::onChunkUnloaded);

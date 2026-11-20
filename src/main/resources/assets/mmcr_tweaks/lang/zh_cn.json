@@ -1,5 +1,8 @@
 {
   "block.mmcr_tweaks.eco_me_port": "ECO ME 通讯口",
+  "block.mmcr_tweaks.eco_cpu_port": "ECO 计算通讯口",
+  "block.mmcr.eco_cpu_controller": "ECO 计算子系统控制器",
+  "machine.mmcr_tweaks.eco_cpu": "ECO 计算子系统",
   "block.mmcr.eco_controller": "ECO 合成子系统控制器",
   "machine.mmcr_tweaks.eco": "ECO 合成子系统"
 }

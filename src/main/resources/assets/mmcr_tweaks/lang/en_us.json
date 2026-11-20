@@ -1,5 +1,8 @@
 {
   "block.mmcr_tweaks.eco_me_port": "ECO ME Communication Port",
+  "block.mmcr_tweaks.eco_cpu_port": "ECO Computation ME Port",
+  "block.mmcr.eco_cpu_controller": "ECO Computation Subsystem Controller",
+  "machine.mmcr_tweaks.eco_cpu": "ECO Computation Subsystem",
   "block.mmcr.eco_controller": "ECO Crafting Subsystem Controller",
   "machine.mmcr_tweaks.eco": "ECO Crafting Subsystem"
 }

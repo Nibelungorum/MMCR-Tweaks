@@ -6,6 +6,7 @@ import appeng.api.orientation.OrientationStrategies;
 import appeng.blockentity.AEBaseBlockEntity;
 import cn.dancingsnow.neoecoae.blocks.NEBlock;
 import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingSystemBlockEntity;
+import cn.dancingsnow.neoecoae.blocks.entity.computation.ECOComputationSystemBlockEntity;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -41,14 +42,30 @@ public final class MMCRTweaks {
         return type;
     });
 
+    private static final DeferredBlock<EcoCpuPortBlock> CPU_PORT = BLOCKS.register("eco_cpu_port", () ->
+            new EcoCpuPortBlock(BlockBehaviour.Properties.ofFullCopy(Blocks.IRON_BLOCK)));
+    private static final DeferredItem<BlockItem> CPU_ITEM = ITEMS.registerSimpleBlockItem(CPU_PORT);
+    static final Supplier<BlockEntityType<ECOComputationSystemBlockEntity>> CPU_ENTITY = ENTITIES.register("eco_cpu_port", () -> {
+        BlockEntityType<ECOComputationSystemBlockEntity> type = BlockEntityType.Builder
+                .<ECOComputationSystemBlockEntity>of(EcoCpuPortBlockEntity::new, CPU_PORT.get()).build(null);
+        CPU_PORT.get().setBlockEntity(ECOComputationSystemBlockEntity.class, type, null, null);
+        AEBaseBlockEntity.registerBlockEntityItem(type, CPU_ITEM.get());
+        return type;
+    });
+
     public MMCRTweaks(IEventBus bus) {
         BLOCKS.register(bus);
         ITEMS.register(bus);
         ENTITIES.register(bus);
-        bus.addListener((RegisterCapabilitiesEvent e) ->
-                e.registerBlockEntity(AECapabilities.IN_WORLD_GRID_NODE_HOST, PORT_ENTITY.get(), (port, side) -> port));
+        bus.addListener((RegisterCapabilitiesEvent e) -> {
+            e.registerBlockEntity(AECapabilities.IN_WORLD_GRID_NODE_HOST, PORT_ENTITY.get(), (port, side) -> port);
+            e.registerBlockEntity(AECapabilities.IN_WORLD_GRID_NODE_HOST, CPU_ENTITY.get(), (port, side) -> port);
+        });
         bus.addListener((BuildCreativeModeTabContentsEvent e) -> {
-            if (e.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) e.accept(PORT_ITEM);
+            if (e.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
+                e.accept(PORT_ITEM);
+                e.accept(CPU_ITEM);
+            }
         });
         NeoForge.EVENT_BUS.addListener(EcoSubsystem::chunkUnload);
         NeoForge.EVENT_BUS.addListener(EcoSubsystem::levelUnload);

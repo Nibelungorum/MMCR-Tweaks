@@ -7,6 +7,7 @@ import cn.dancingsnow.neoecoae.blocks.entity.NEBlockEntity;
 import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingPatternBusBlockEntity;
 import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingWorkerBlockEntity;
 import cn.dancingsnow.neoecoae.multiblock.cluster.NECraftingCluster;
+import cn.dancingsnow.neoecoae.multiblock.cluster.NECluster;
 import cn.howxu.mmcr.internal.tile.MachineControllerBlockEntity;
 import cn.howxu.mmcr.publicapi.behavior.TickContext;
 import net.minecraft.core.BlockPos;
@@ -23,7 +24,13 @@ import java.util.Set;
 
 public final class EcoSubsystem {
     // Server thread only. A cluster unregisters itself even when ECO initiates teardown.
-    private static final Map<MachineControllerBlockEntity, Binding> ACTIVE = new IdentityHashMap<>();
+    private record Formation(MachineControllerBlockEntity owner, long version, Set<ChunkPos> chunks, NECluster<?> cluster) {}
+    private static final Map<MachineControllerBlockEntity, Formation> ACTIVE = new IdentityHashMap<>();
+
+    static void forget(MachineControllerBlockEntity owner, NECluster<?> cluster) {
+        var bound = ACTIVE.get(owner);
+        if (bound != null && bound.cluster == cluster) ACTIVE.remove(owner);
+    }
 
     public static boolean managed(Object part) {
         return part instanceof EcoPortBlockEntity
@@ -37,9 +44,29 @@ public final class EcoSubsystem {
         if (!structure.formed() || !structure.structureAreaLoaded() || structure.pattern() == null || structure.dirty()) return;
         var previous = ACTIVE.get(controller);
         if (previous != null && previous.version == structure.version()) return;
-        if (previous != null) previous.destroy();
+        if (previous != null) previous.cluster.destroy();
         // An incomplete or contested structure can remain formed for a long time.
         if (!context.isDue(10) || MBCalculator.isModificationInProgress()) return;
+
+        if (EcoMachine.CPU.equals(context.machineId())) {
+            EcoCpuPortBlockEntity port = null;
+            for (var offset : structure.pattern().pattern().keySet()) {
+                var pos = controller.getBlockPos().offset(offset);
+                if (!level.hasChunkAt(pos)) return;
+                if (level.getBlockEntity(pos) instanceof EcoCpuPortBlockEntity host) {
+                    if (port != null) return;
+                    port = host;
+                }
+            }
+            if (port == null || port.isRemoved() || port.getCluster() != null || port.getGridNode() == null) return;
+            var cluster = new EcoCpuCluster(controller, port);
+            cluster.addBlockEntity(port);
+            cluster.updateFormed(true);
+            port.updateCluster(cluster);
+            cluster.notifyGridCpuChange();
+            ACTIVE.put(controller, new Formation(controller, structure.version(), structure.criticalChunks(), cluster));
+            return;
+        }
 
         EcoPortBlockEntity port = null;
         var parts = new ArrayList<NEBlockEntity<NECraftingCluster, ?>>();
@@ -68,7 +95,7 @@ public final class EcoSubsystem {
             max = BlockPos.max(max, part.getBlockPos());
         }
 
-        var binding = new Binding(controller, min, max, structure.version(), structure.criticalChunks());
+        var binding = new Binding(controller, min, max);
         MBCalculator.setModificationInProgress(binding);
         try {
             parts.forEach(binding::addBlockEntity);
@@ -80,7 +107,7 @@ public final class EcoSubsystem {
             }
             port.updateCluster(binding);
             binding.updateStatus(true);
-            ACTIVE.put(controller, binding);
+            ACTIVE.put(controller, new Formation(controller, structure.version(), structure.criticalChunks(), binding));
         } catch (RuntimeException failure) {
             binding.destroy();
             throw failure;
@@ -92,7 +119,7 @@ public final class EcoSubsystem {
     public static void unload(MachineControllerBlockEntity controller) {
         if (!(controller.getLevel() instanceof ServerLevel)) return;
         var binding = ACTIVE.get(controller);
-        if (binding != null) binding.destroy();
+        if (binding != null) binding.cluster.destroy();
     }
 
     public static void unform(MachineControllerBlockEntity controller) {
@@ -100,39 +127,35 @@ public final class EcoSubsystem {
         var binding = ACTIVE.get(controller);
         if (binding == null) return;
         if (level.getServer().isRunning() && binding.chunks.stream().allMatch(c -> level.hasChunk(c.x, c.z))) {
-            binding.breakCluster();
-        } else binding.destroy();
+            binding.cluster.breakCluster();
+        } else binding.cluster.destroy();
     }
 
     static void chunkUnload(ChunkEvent.Unload event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         for (var b : List.copyOf(ACTIVE.values())) {
-            if (b.owner.getLevel() == level && b.chunks.contains(event.getChunk().getPos())) b.destroy();
+            if (b.owner.getLevel() == level && b.chunks.contains(event.getChunk().getPos())) b.cluster.destroy();
         }
     }
 
     static void levelUnload(LevelEvent.Unload event) {
         if (!(event.getLevel() instanceof ServerLevel level)) return;
-        for (var b : List.copyOf(ACTIVE.values())) if (b.owner.getLevel() == level) b.destroy();
+        for (var b : List.copyOf(ACTIVE.values())) if (b.owner.getLevel() == level) b.cluster.destroy();
     }
 
     private static final class Binding extends NECraftingCluster {
         final MachineControllerBlockEntity owner;
-        final long version;
-        final Set<ChunkPos> chunks;
         final List<IGridConnection> links = new ArrayList<>();
 
-        Binding(MachineControllerBlockEntity owner, BlockPos min, BlockPos max, long version, Set<ChunkPos> chunks) {
+        Binding(MachineControllerBlockEntity owner, BlockPos min, BlockPos max) {
             super(min, max);
             this.owner = owner;
-            this.version = version;
-            this.chunks = chunks;
         }
 
         @Override
         public void destroy() {
             if (isDestroyed()) return;
-            ACTIVE.remove(owner, this);
+            forget(owner, this);
             super.destroy();
             for (var link : links) if (link.a().getConnections().contains(link)) link.destroy();
             links.clear();

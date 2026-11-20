@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "cn.howxu.mmcr_tweaks.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "CraftingCalculatorMixin",
+    "EcoMemberMixin",
+    "ControllerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

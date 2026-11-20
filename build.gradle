@@ -26,7 +26,15 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
+    mavenCentral { content { includeGroup "org.appliedenergistics" } }
+    maven { url = "https://api.modrinth.com/maven"; content { includeGroup "maven.modrinth" } }
+    maven { url = "https://cursemaven.com"; content { includeGroup "curse.maven" } }
+    ivy {
+        url = "https://github.com/DancingSnow0517/NeoECOAEExtension/releases/download"
+        patternLayout { artifact "[revision]/[artifact]-[revision].[ext]" }
+        metadataSources { artifact() }
+        content { includeGroup "eco.release" }
+    }
 }
 
 base {
@@ -38,6 +46,13 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 //minecraft.accessTransformers.file rootProject.file('src/main/resources/META-INF/accesstransformer.cfg')
 //minecraft.accessTransformers.entry public net.minecraft.client.Minecraft textureManager # textureManager
+
+sourceSets {
+    gametest {
+        compileClasspath += main.output + main.compileClasspath
+        runtimeClasspath += main.output + main.runtimeClasspath
+    }
+}
 
 // Default run configurations.
 // These can be tweaked, removed, or duplicated as needed.
@@ -75,6 +90,8 @@ runs {
     // By default, the server will crash when no gametests are provided.
     // The gametest system is also enabled by default for other run configs under the /test command.
     gameTestServer {
+        modSource project.sourceSets.gametest
+        systemProperty 'forge.logging.console.level', 'info'
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
     }
 
@@ -103,6 +120,11 @@ dependencies {
     // And its provides the option to then use net.minecraft as the group, and one of; client, server or joined as the module name, plus the game version as version.
     // For all intends and purposes: You can treat this dependency as if it is a normal library you would use.
     implementation "net.neoforged:neoforge:${neo_version}"
+    implementation(project.hasProperty('mmcrJar') ? files(project.mmcrJar) : 'maven.modrinth:modular-machinery-community-refoxed:6FrkThyx')
+    implementation(project.hasProperty('ecoJar') ? files(project.ecoJar) : 'eco.release:neoecoae:21.2.19-beta')
+    implementation 'org.appliedenergistics:appliedenergistics2:19.2.17'
+    implementation 'curse.maven:ldlib-626676:9059591'
+    runtimeOnly 'org.appliedenergistics:guideme:21.1.1'
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime

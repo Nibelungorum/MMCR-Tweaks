@@ -27,7 +27,7 @@ public enum CelestialRenderers implements ControllerRenderer {
     }
 
     @Override public boolean shouldRenderOffScreen() { return true; }
-    @Override public int getViewDistance() { return 160; }
+    @Override public int getViewDistance() { return 128; }
 
     @Override public void render(ControllerRenderContext ctx, PoseStack poses, MultiBufferSource buffers, int light, int overlay) {
         var mc = Minecraft.getInstance();

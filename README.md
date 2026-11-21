@@ -27,6 +27,14 @@ integration of AE2LT
 
 **两台机器都不附正式形状。** 给这两个已注册的机器 ID 配置结构即可，不要重复注册机器定义。验收布局在 [src/gametest](src/gametest)，不随模组 jar 分发。
 
+### 成型特效
+
+![实际客户端截图：F9 铸星天炉与 C9 事件视界](docs/images/eco-celestial.jpg)
+
+F9「铸星天炉」从底座星图升起四面星幕，冰臂点火，屋顶灯带托起带双环的恒星；彗星会沿弯曲轨道撞向冰臂，溅出一圈星屑。C9「事件视界」的塔身铺有分层电路和数据雨，四面裂隙轮流露出紫蓝星空，闭合时放电到塔冠；顶部黑洞有吸积盘、吞星和双极喷流。
+
+演出只看 MMCR 成型状态，空闲也可观看，不代表派单或耗电，不需要光影包。锚点按 `合成.js` 的 30×31×30 建筑和 `计算.js` 的 22×36×22 建筑设计，随控制器朝向旋转；整合包改用其他形状时，特效不会自动重新定位。
+
 ### 构建与测试
 
 Java 21、Gradle 9.6.0，在项目根目录运行：
@@ -38,4 +46,4 @@ gradle build runGameTestServer
 
 MMCR 固定读取 `../mmcr-1.21.1/build/libs/mmcr-neoforge-mc1.21.1-0.0.0.jar`。需要包含提交 `1eb11da9a` 的本地构建：F9 和 C9 使用该版本的 `serverTick(Supplier)`，每个控制器独立维护结构绑定。旧开发包也可能显示 `0.0.0`，更新源码后请重新运行上面的 `jar` 任务。开发用的 KubeJS、Rhino、Jade，以及客户端的 JEI、Sodium、ModernUI 等，跟随相邻工程 `gradle.properties` 的版本，不是玩家必装依赖。ECO 仍使用 `21.2.19-beta`：相邻工程的 `21.2.6` 缺少 C9 所用的 API。可用 `-PecoJar=/path/to/neoecoae.jar` 测试兼容的本地 ECO 包。
 
-GameTest 实际下单验证单 FX 的 513 次整批、缺电后恢复、双 FX 同 tick 扣费、65 单并发和退料。重载测试保存持有订单的 CPU 和已收料 FX 的 NBT，调用卸载回调并重建实体；不强卸 GameTest 共用的区块，也不模拟整个服务器重启。
+GameTest 实际下单验证单 FX 的 513 次整批、缺电后恢复、双 FX 同 tick 扣费、65 单并发和退料。重载测试保存持有订单的 CPU 和已收料 FX 的 NBT，调用卸载回调并重建实体；不强卸 GameTest 共用的区块，也不模拟整个服务器重启。几何回归另检查锚点旋转、近远景、彗星落点和放电终点。`runGameTestServer` 不加载游戏渲染器；查看实际画面需运行 `gradle runClient`，在世界里让两台机器成型。

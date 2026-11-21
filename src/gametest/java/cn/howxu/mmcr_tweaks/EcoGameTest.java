@@ -10,8 +10,10 @@ import appeng.blockentity.crafting.CraftingBlockEntity;
 import appeng.blockentity.storage.MEChestBlockEntity;
 import appeng.core.definitions.AEBlocks;
 import appeng.core.definitions.AEItems;
+import cn.dancingsnow.neoecoae.blocks.NEBlock;
 import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingPatternBusBlockEntity;
 import cn.dancingsnow.neoecoae.blocks.entity.crafting.ECOCraftingWorkerBlockEntity;
+import cn.dancingsnow.neoecoae.multiblock.cluster.NECraftingCluster;
 import cn.howxu.mmcr.internal.tile.MachineControllerBlockEntity;
 import cn.howxu.mmcr.publicapi.event.RegisterMachineStructuresEvent;
 import cn.howxu.mmcr.publicapi.structure.BlockConditions;
@@ -46,7 +48,7 @@ public class EcoGameTest {
     public static void structure(RegisterMachineStructuresEvent event) {
         event.registerStructure(MACHINE, s -> s.singlePattern(p -> p.pattern("C", "P", "I", "F", "S", "X")
                 .controller('C').where('P', BlockConditions.block(PORT)).where('I', BlockConditions.block(Blocks.IRON_BLOCK))
-                .where('S', BlockConditions.any(BlockConditions.block(Blocks.IRON_BLOCK), BlockConditions.block(FX)))
+                .where('S', BlockConditions.any(BlockConditions.block(Blocks.AIR), BlockConditions.block(Blocks.IRON_BLOCK), BlockConditions.block(FX)))
                 .where('F', BlockConditions.block(FD)).where('X', BlockConditions.block(FX))));
     }
 
@@ -58,6 +60,41 @@ public class EcoGameTest {
     @GameTest(template = "empty", timeoutTicks = 600)
     public static void reloadWithPaidInputs(GameTestHelper h) {
         submitOneOrder(h, true);
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 400)
+    public static void blockPlacementKeepsFormedParts(GameTestHelper h) {
+        var c = new BlockPos(1, 1, 1);
+        h.setBlock(c, ModBlocks.controllerFor(MACHINE).get());
+        h.setBlock(c.above(), BuiltInRegistries.BLOCK.get(PORT));
+        h.setBlock(c.above(2), Blocks.IRON_BLOCK);
+        h.setBlock(c.above(3), BuiltInRegistries.BLOCK.get(FD));
+        h.setBlock(c.above(5), BuiltInRegistries.BLOCK.get(FX));
+        MachineControllerBlockEntity controller = h.getBlockEntity(c);
+        ECOCraftingPatternBusBlockEntity fd = h.getBlockEntity(c.above(3));
+        ECOCraftingWorkerBlockEntity fx = h.getBlockEntity(c.above(5));
+        var original = new AtomicReference<NECraftingCluster>();
+        controller.requestImmediateStructureCheck();
+        h.startSequence().thenWaitUntil(() -> h.assertTrue(fd.getCluster() != null && fx.getCluster() == fd.getCluster(), "FD/FX are bound"))
+            .thenExecute(() -> {
+                original.set(fd.getCluster());
+                // Same chunk, outside the footprint. setBlock alone does not fire the player placement event.
+                h.setBlock(c.above(7), Blocks.STONE);
+                MachineControllerBlockEntity.markStructureDirty(h.getLevel(), h.absolutePos(c.above(7)));
+            }).thenIdle(20).thenExecute(() -> {
+                h.assertTrue(!original.get().isDestroyed(), "placement outside the footprint detached the members");
+                // A valid casing in a flexible slot triggers a real MMCR recheck without changing ECO members.
+                h.setBlock(c.above(4), Blocks.IRON_BLOCK);
+                MachineControllerBlockEntity.markStructureDirty(h.getLevel(), h.absolutePos(c.above(4)));
+            }).thenIdle(40).thenExecute(() -> {
+                h.assertTrue(!original.get().isDestroyed() && fd.getCluster() == original.get() && fx.getCluster() == original.get(),
+                        "placement with unchanged members tore down the formed cluster");
+                h.assertTrue(fd.getBlockState().getValue(NEBlock.FORMED) && fx.getBlockState().getValue(NEBlock.FORMED), "FD/FX remain formed");
+                h.setBlock(c.above(4), BuiltInRegistries.BLOCK.get(FX));
+                MachineControllerBlockEntity.markStructureDirty(h.getLevel(), h.absolutePos(c.above(4)));
+            }).thenWaitUntil(() -> h.assertTrue(fd.getCluster() != null && fx.getCluster() == fd.getCluster()
+                    && ((ECOCraftingWorkerBlockEntity) h.getBlockEntity(c.above(4))).getCluster() == fd.getCluster(), "a new in-pattern FX is claimed"))
+            .thenSucceed();
     }
 
     private static void submitOneOrder(GameTestHelper h, boolean reload) {

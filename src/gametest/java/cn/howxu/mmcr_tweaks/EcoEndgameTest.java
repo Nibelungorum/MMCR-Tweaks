@@ -69,6 +69,10 @@ public class EcoEndgameTest {
                 && second.getMainNode().getGrid().getCraftingService().getCpus().size() == 2, "both C9 controllers advertise"));
         seq.thenExecute(() -> {
             original.set(second.getCluster().getFakeCPU());
+            ((MachineControllerBlockEntity) h.getBlockEntity(b)).requestImmediateStructureCheck();
+        }).thenIdle(40).thenExecute(() -> {
+            h.assertTrue(second.getCluster() != null && second.getCluster().getFakeCPU() == original.get(),
+                    "a successful recheck preserves the advertised CPU");
             h.setBlock(a.above(2), Blocks.AIR);
         }).thenWaitUntil(() -> h.assertTrue(first.getCluster() == null && second.getCluster() != null
                 && second.getMainNode().getGrid().getCraftingService().getCpus().equals(java.util.Set.of(original.get())),

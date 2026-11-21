@@ -26,15 +26,31 @@ import java.util.function.Consumer;
 
 public final class EcoSubsystem implements Consumer<TickContext> {
     // Each MMCR controller owns one callback. Only teardown events need the shared index.
-    private record Formation(MachineControllerBlockEntity owner, long version, Set<ChunkPos> chunks, NECluster<?> cluster) {}
+    private record Formation(MachineControllerBlockEntity owner, long version, Set<ChunkPos> chunks, NECluster<?> cluster, int memberCount) {}
     private static final Map<MachineControllerBlockEntity, Formation> ACTIVE = new IdentityHashMap<>();
 
     private MachineControllerBlockEntity owner;
     private Formation formation;
 
-    private void remember(StructureSnapshot structure, NECluster<?> cluster) {
-        formation = new Formation(owner, structure.version(), structure.criticalChunks(), cluster);
+    private void remember(StructureSnapshot structure, NECluster<?> cluster, int memberCount) {
+        formation = new Formation(owner, structure.version(), structure.criticalChunks(), cluster, memberCount);
         ACTIVE.put(owner, formation);
+    }
+
+    // A successful MMCR recheck can advance the version without changing any ECO member.
+    private boolean keepBinding(StructureSnapshot structure, List<? extends NEBlockEntity<?, ?>> members) {
+        if (formation == null) return false;
+        var cluster = formation.cluster;
+        if (formation.memberCount == members.size() && members.stream().allMatch(part -> !part.isRemoved() && part.getCluster() == cluster)) {
+            remember(structure, cluster, members.size());
+            return true;
+        }
+        cluster.destroy();
+        return false;
+    }
+
+    private void releaseBinding() {
+        if (formation != null) formation.cluster.destroy();
     }
 
     void forget(NECluster<?> cluster) {
@@ -60,27 +76,28 @@ public final class EcoSubsystem implements Consumer<TickContext> {
         var structure = owner.structureSnapshot();
         if (!structure.formed() || !structure.structureAreaLoaded() || structure.pattern() == null || structure.dirty()) return;
         if (formation != null && formation.version == structure.version()) return;
-        if (formation != null) formation.cluster.destroy();
-        // An incomplete or contested structure can remain formed for a long time.
-        if (!context.isDue(10) || MBCalculator.isModificationInProgress()) return;
+        // Revalidate a live binding immediately; throttle retries only while unbound.
+        if ((formation == null && !context.isDue(10)) || MBCalculator.isModificationInProgress()) return;
 
         if (EcoMachine.CPU.equals(context.machineId())) {
             EcoCpuPortBlockEntity port = null;
             for (var offset : structure.pattern().pattern().keySet()) {
                 var pos = owner.getBlockPos().offset(offset);
-                if (!level.hasChunkAt(pos)) return;
+                if (!level.hasChunkAt(pos)) { releaseBinding(); return; }
                 if (level.getBlockEntity(pos) instanceof EcoCpuPortBlockEntity host) {
-                    if (port != null) return;
+                    if (port != null) { releaseBinding(); return; }
                     port = host;
                 }
             }
-            if (port == null || port.isRemoved() || port.getCluster() != null || port.getGridNode() == null) return;
+            if (port == null) { releaseBinding(); return; }
+            if (keepBinding(structure, List.of(port))) return;
+            if (port.isRemoved() || port.getCluster() != null || port.getGridNode() == null) return;
             var cluster = new EcoCpuCluster(this, port);
             cluster.addBlockEntity(port);
             cluster.updateFormed(true);
             port.updateCluster(cluster);
             cluster.notifyGridCpuChange();
-            remember(structure, cluster);
+            remember(structure, cluster, 1);
             return;
         }
 
@@ -89,10 +106,10 @@ public final class EcoSubsystem implements Consumer<TickContext> {
         boolean bus = false, worker = false;
         for (var offset : structure.pattern().pattern().keySet()) {
             var pos = owner.getBlockPos().offset(offset);
-            if (!level.hasChunkAt(pos)) return;
+            if (!level.hasChunkAt(pos)) { releaseBinding(); return; }
             var entity = level.getBlockEntity(pos);
             if (entity instanceof EcoPortBlockEntity host) {
-                if (port != null) return;
+                if (port != null) { releaseBinding(); return; }
                 port = host;
             } else if (entity instanceof ECOCraftingPatternBusBlockEntity fd) {
                 parts.add(fd);
@@ -102,8 +119,9 @@ public final class EcoSubsystem implements Consumer<TickContext> {
                 worker = true;
             }
         }
-        if (port == null || !bus || !worker) return;
+        if (port == null || !bus || !worker) { releaseBinding(); return; }
         parts.add(port);
+        if (keepBinding(structure, parts)) return;
         BlockPos min = port.getBlockPos(), max = min;
         for (var part : parts) {
             if (part.isRemoved() || part.getCluster() != null || part.getGridNode() == null) return;
@@ -123,7 +141,7 @@ public final class EcoSubsystem implements Consumer<TickContext> {
             }
             port.updateCluster(binding);
             binding.updateStatus(true);
-            remember(structure, binding);
+            remember(structure, binding, parts.size());
         } catch (RuntimeException failure) {
             binding.destroy();
             throw failure;
